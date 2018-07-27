@@ -4,6 +4,7 @@
 #include "utils.hpp"
 #include "hals.hpp"
 #include "mu.hpp"
+#include "r2.hpp"
 #include <string>
 #include <omp.h>
 
@@ -59,6 +60,7 @@ void NMFDriver(int k, UWORD m, UWORD n, std::string AfileName,
         t2 = toc();
         INFO << "time taken:" << t2 << std::endl;
         if (!WfileName.empty()) {
+	    //cout<<"Hi"<<endl;
             nmfAlgorithm.getLeftLowRankFactor().save(WfileName, arma::raw_ascii);
         }
         if (!HfileName.empty()) {
@@ -125,6 +127,7 @@ void parseCommandLineandCallNMF(int argc, char *argv[]) {
                               &long_index)) != -1) {
         switch (opt) {
         case 'a' :
+	    //cout<<"hello"<<endl;
             nmfalgo = static_cast<algotype>(atoi(optarg));
             break;
         case 'h' : {
@@ -151,7 +154,7 @@ void parseCommandLineandCallNMF(int argc, char *argv[]) {
             break;
         case 'w': {
             std::string temp = std::string(optarg);
-            HfileName = temp;
+            WfileName = temp; //error, it was HfileName=temp, should be Wfilename
         }
         break;
         case WINITFLAG: {
@@ -198,10 +201,19 @@ void parseCommandLineandCallNMF(int argc, char *argv[]) {
                                  HInitfileName, WfileName, HfileName, numIt);
 #endif
         break;
+    case R2_NMF:
+	if (lowRank != 2){
+		cout<<"INVALID INPUT"<<endl;
+		break;
+	}
+	NMFDriver<R2NMF<MAT> >(lowRank, m, n, AfileName, WInitfileName,
+                                    HInitfileName, WfileName, HfileName, numIt);
+	break;
     }
 }
 
 
 int main(int argc, char* argv[]) {
+    //cout <<"Hello 1"<<endl;
     parseCommandLineandCallNMF(argc, argv);
 }

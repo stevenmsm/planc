@@ -1,4 +1,4 @@
-A-->Distributed NMF Library
+Distributed NMF Library
 =======================
 
 In this repository, we offer both MPI and OPENMP implementation for MU, HALS and ANLS/BPP based NMF algorithms. This can run off the shelf as well easy to integrate in other source code. 

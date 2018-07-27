@@ -152,6 +152,7 @@ class NMF {
     virtual void computeNMF() = 0;
 
     MAT getLeftLowRankFactor() {
+	//W.print();
         return W;
     }
 
@@ -319,18 +320,21 @@ class NMF {
         }
         double err_time = toc();
         INFO << "err compute time::" << err_time << std::endl;
+	
+	//INFO <<"This function"<< std::endl;
+
         this->objective_err = arma::sum(splitErr);
     }
 
 #endif  // ifdef BUILD_SPARSE
-    void computeObjectiveError(const T & At, const MAT & WtW,
-                               const MAT & HtH) {
+    void computeObjectiveError(const T & At, const MAT & WtW, const MAT & HtH) { //the efficient compute error function
         MAT AtW = At * this->W;
 
         double sqnormA  = this->normA * this->normA;
         double TrHtAtW  = arma::trace(this->H.t() * AtW);
         double TrWtWHtH = arma::trace(WtW * HtH);
 
+	// ||A-WH|| = <A,A>-2<WtA,A>+<WtW,HtH>
         this->objective_err = sqnormA - (2 * TrHtAtW) + TrWtWHtH;
     }
 
