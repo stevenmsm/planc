@@ -2,17 +2,17 @@
 #define OPENMP_R2_HPP_
 
 #include <cmath>
-#include <stdio.h>
-#include <omp.h>
+//#include <stdio.h>
+//#include <omp.h>
 #include "nmf.hpp"
 #include "utils.hpp"
-#ifdef MKL_FOUND
-#include <mkl.h>
-#else
-#include <lapacke.h>
-#endif
+//#ifdef MKL_FOUND
+//#include <mkl.h>
+//#else
+//#include <lapacke.h>
+//#endif
 
-#define ONE_THREAD_MATRIX_SIZE 2000
+//#define ONE_THREAD_MATRIX_SIZE 2000
 
 template <class T>
 class R2NMF: public NMF<T> {
@@ -59,7 +59,7 @@ class R2NMF: public NMF<T> {
     	    arma::rowvec u; // store row 1 projection, normalized
     	    arma::rowvec v; //store row 2 projection, normalized
     	    arma::umat notbothpos; //store indices of columns that have at least one negative entry
-	    UINT numThreads = (R.n_cols / ONE_THREAD_MATRIX_SIZE) + 1; // initiate number of threads
+	    //UINT numThreads =  OPENBLAS_NUM_THREADS; // initiate number of threads
 
 	    // X=C\R; solve()=matlab backslash=choleskey factorization
 	    X = arma::solve(C,R);
@@ -72,8 +72,8 @@ class R2NMF: public NMF<T> {
 	    double beta2 = std::sqrt(C(1,1));
 	    
 	    // parallel for loop
-            #pragma omp parallel for schedule(dynamic)
-	    for (int i=0; i<X.n_cols;i++) {//loop over cols of Ht, find notbothpos cols and fix them
+            #pragma omp parallel for 
+	    for (int i=0; i<X.n_cols;i++) {//loop over cols of Ht, find notbothpos cols and fix them	
 		if (notbothpos(i)!=0) {
 		   if (beta1*u(i) > beta2*v(i)){//by pythagorean thm, choose the longer projection
 			X(0,i)=u(i);
@@ -83,18 +83,12 @@ class R2NMF: public NMF<T> {
 			X(0,i)=0;
 			X(1,i)=v(i);
 		   }
-		}
+		}		
 	    }
 	
     }
-  public:
-    R2NMF(const T &A, int lowrank): NMF<T>(A, lowrank) {
-        allocateMatrices();
-    }
-    R2NMF(const T &A, const MAT &llf, const MAT &rlf) : NMF<T>(A, llf, rlf) {
-        allocateMatrices();
-    }
-    void computeNMF() { //Recall Problem: ||A-WHt||
+
+    void computeNMF_R2() { //Recall Problem: ||A-WHt||, this function 
 	int currentIteration = 0;
         double t1, t2;
         this->At = this->A.t();
@@ -133,24 +127,27 @@ class R2NMF: public NMF<T> {
                  << currentIteration << "/" << this->num_iterations() << ")"
                  << " time =" << toc() << std::endl;
 
-	    //Compute Objective Error (call function in nmf.hpp)
+	    //Compute Objective Error (call function in nmf.hpp, the more efficient one)
 	    WtW=Wt*this->W; //updated Wt and this->W, but did not update WtW
-            this->computeObjectiveError(At, WtW, HtH); //!!All input need to be up-to-date before calling compute error function
-
-
-	double norm_exact = arma::norm(this->A-this->W*this->H.t(),"fro");
-	cout<<"norm relative: "<<norm_exact/this->normA<<endl;
-	cout<<endl;
-
-
+            this->computeObjectiveError(At, WtW, HtH); //All inputs must be uptodate before calling error function
             INFO << "Completed it = " << currentIteration << " R2ERR="
                  << sqrt(this->objective_err)/this->normA << std::endl;
 
 	    //iteration count
             currentIteration++;
-	
         }
         this->normalize_by_W();
+    }
+
+  public:
+    R2NMF(const T &A, int lowrank): NMF<T>(A, lowrank) {
+        allocateMatrices();
+    }
+    R2NMF(const T &A, const MAT &llf, const MAT &rlf) : NMF<T>(A, llf, rlf) {
+        allocateMatrices();
+    }
+    void computeNMF() { 
+	computeNMF_R2();
     }
     ~R2NMF() {
         freeMatrices();
