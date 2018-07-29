@@ -72,7 +72,8 @@ class MUNMF: public NMF<T> {
             INFO << "Completed It ("
                  << currentIteration << "/" << this->num_iterations() << ")"
                  << " time =" << toc() << std::endl;
-            this->computeObjectiveError();
+	    WtW=this->W.t()*this->W;//updated W above but didn't update WtW, update WtW again here
+            this->computeObjectiveError(At, WtW, HtH); //compute error using the more efficient function
             INFO << "Completed it = " << currentIteration << " MUERR="
                  << sqrt(this->objective_err)/this->normA << std::endl;
             currentIteration++;

@@ -98,7 +98,8 @@ class HALSNMF: public NMF<T> {
             INFO << "Completed It ("
                  << currentIteration << "/" << this->num_iterations() << ")"
                  << " time =" << toc() << std::endl;
-            this->computeObjectiveError();
+	    WtW=this->W.t()*this->W; //update WtW again after updated W
+            this->computeObjectiveError(At, WtW, HtH); //compute error function
             INFO << "Completed it = " << currentIteration << " HALSERR="
                  << sqrt(this->objective_err) / this->normA << std::endl;
             currentIteration++;
