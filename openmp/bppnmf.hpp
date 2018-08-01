@@ -39,6 +39,12 @@ class BPPNMF: public NMF<T> {
         INFO << "starting " << worh << ". Prereq for " << worh
              << " took=" << t2 << " NumThreads=" << numThreads
              << PRINTMATINFO(giventGiven) << PRINTMATINFO(giventInput) << std::endl;
+
+
+				//INFO<<std::endl;
+				//INFO <<"Number of Threads: "<<omp_get_thread_num()<<std::endl;
+
+
         tic();
         #pragma omp parallel for schedule(dynamic)
         for (UINT i = 0; i < numThreads; i++) {
@@ -217,10 +223,18 @@ class BPPNMF: public NMF<T> {
 #endif
             INFO << "completed it=" << currentIteration << " time taken = "
                  << this->stats(currentIteration + 1, 3) << std::endl;
-            this->computeObjectiveError();
+	    
+	    MAT temp_WtW=this->W.t()*this->W; //update WtW after updated W
+	    MAT temp_HtH=this->H.t()*this->H; //update HtH after updated H
+            this->computeObjectiveError(At, temp_WtW, temp_HtH, this->W, this->H); //call efficient compute error function 
             INFO << "error:it = " << currentIteration << " bpperr ="
                  << sqrt(this->objective_err) / this->normA << std::endl;
             currentIteration++;
+
+				//INFO<<std::endl;
+				//INFO <<"Number of Threads: "<<omp_get_thread_num()<<std::endl;
+
+
         }
         this->normalize_by_W();
 #ifdef COLLECTSTATS

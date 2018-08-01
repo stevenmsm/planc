@@ -327,11 +327,12 @@ class NMF {
     }
 
 #endif  // ifdef BUILD_SPARSE
-    void computeObjectiveError(const T & At, const MAT & WtW, const MAT & HtH) { //the efficient compute error function
-        MAT AtW = At * this->W;
+    //the efficient error computing function (all solver is now calling this)
+    void computeObjectiveError(const T & At, const MAT & WtW, const MAT & HtH, const MAT & W, const MAT & H) { 
+        MAT AtW = At * W;
 
         double sqnormA  = this->normA * this->normA;
-        double TrHtAtW  = arma::trace(this->H.t() * AtW);
+        double TrHtAtW  = arma::trace(H.t() * AtW);
         double TrWtWHtH = arma::trace(WtW * HtH);
 
 	// ||A-WH|| = <A,A>-2<WtA,A>+<WtW,HtH>

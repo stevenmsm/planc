@@ -7,6 +7,8 @@
 #include "r2.hpp"
 #include <string>
 #include <omp.h>
+#include <iostream>
+
 
 template <class NMFTYPE>
 void NMFDriver(int k, UWORD m, UWORD n, std::string AfileName,
@@ -202,11 +204,10 @@ void parseCommandLineandCallNMF(int argc, char *argv[]) {
 #endif
         break;
     case R2_NMF:
-	if (lowRank != 2){
-		cout<<"INVALID INPUT"<<endl;
-		break;
-	}
-	NMFDriver<R2NMF<MAT> >(lowRank, m, n, AfileName, WInitfileName,
+        // R2_NMF outputs a hierarchical tree structure where each node is solving a rank2 NMF problem
+        // Here, lowRank is number of leaf nodes.
+
+	    NMFDriver<R2NMF<MAT> >(lowRank, m, n, AfileName, WInitfileName,
                                     HInitfileName, WfileName, HfileName, numIt);
 	break;
     }
