@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <omp.h>
+#include <time.h>
 #include "nmf.hpp"
 #include "utils.hpp"
 using namespace std;
@@ -172,27 +173,133 @@ class R2NMF: public NMF<T> {
     //         from the 1st split to the (k-1)-th split. (The first entry is always 0.)
     // is_leaf: An array of length 2*(k-1). A "1" at index i means that the node with numbering i is a leaf node
     //          in the final tree generated, and "0" indicates non-leaf nodes in the final tree.
-    // leaf_membership: An array of length 2*(k-1). The i-th element contains the subset of items
-    //                  at the node with numbering i.
+    // clusters: A cell array of length 2*(k-1). The i-th element contains the subset of items
+    //           at the node with numbering i.
     // timings: An array of length k-1.
-    //          Its i-th element is the wall-time for performing i splits (with i+1 leaf nodes).
+    //          Its i-th element is the wall-time for performing i splits (with i+1 leaf nodes), in seconds.
     // Ws: A cell array of length 2*(k-1).
     //     Its i-th element is the topic vector of the cluster at the node with numbering i.
     // priorities: An array of length 2*(k-1).
     //             Its i-th element is the modified NDCG scores at the node with numbering i (see the reference paper).
     void computeNMF() {
+        //initialize all inputs for Hier-R2
+
+        // initialize all outputs from Hier-R2
         MAT tree(2 , 2*(this->k-1));
         tree.zeros();
-        arma::rowvec splits = arma::zeros<arma::rowvec>(this->k-1);
-        arma::rowvec is_leaf = arma::zeros<arma::rowvec>(2*(this->k-1));
-        arma::rowvec leaf_membership = arma::zeros<arma::rowvec>(2*(this->k-1));
+        arma::rowvec splits = arma::ones<arma::rowvec>(this->k-1);
+        splits = splits * (-1); //no nodes are being splitted yet
+        arma::rowvec is_leaf = arma::ones<arma::rowvec>(2*(this->k-1));
+        is_leaf = is_leaf * (-1); //no one is a leaf node nor a parent node
+        arma::field<VEC> clusters (2*(this->k-1)); //cell array of vectors
+        arma::rowvec timings = arma::zeros<arma::rowvec>(this->k-1);
+        MAT Ws(this->A.n_rows,2*(this->k-1)); //store all node's W vector, each is mx1
+        Ws.zeros();
+        arma::rowvec priorities = arma::zeros<arma::rowvec>(2*(this->k-1));
 
-        MAT W_temp;
-        MAT H_temp;
-        W_temp = arma::randu<MAT>(this->A.n_rows,2);
-        H_temp = arma::randu<MAT>(this->A.n_cols,2);
-        
-        computeNMF_R2(W_temp, H_temp, this->A);
+
+        // Split node 0, if not all rows of the data matrix sum to non-zero values, adjust as follow
+        // initiate and randomize the first split's W, H
+        arma::umat term_subset = arma::find(sum(this->A,1));
+        MAT W = arma::randu<MAT>(term_subset.n_elem,2);
+        MAT H = arma::randu<MAT>(this->A.n_cols,2);
+        if (term_subset.n_elem == this->A.n_rows) { //if all rows sum to nonzero, split node 0
+            computeNMF_R2(W, H, this->A);
+        }
+        else{ //if not, split node 0 for those nonzero summed rows and set zero summed rows to 0 for W
+            computeNMF_R2(W, H, this->A.rows(term_subset));
+            MAT W_complete(this->A.n_rows,2);
+            W_complete.zeros();
+            W_complete.rows(term_subset)=W;
+            W = W_complete;
+            W_complete.clear();
+        }
+
+        // keep splitting
+        // initiate some variables used in the loop
+        clock_t t0 = clock();
+        int result_used=0; //keep track of the latest child number
+        arma::uword split_node; //keep track of which node the loop is current splitting
+        int new_node_1; // after the current split, record the 2 children's number
+        int new_node_2;
+        double min_priority; //store minimum priority among current leaf nodes
+        double max_priority; //max priority among current leaf nodes
+        arma::uvec leaves; // store the indices of all current leaf nodes
+        arma::rowvec temp_priority; // store the priorities (from the priorities array) of current leaf nodes
+        arma::field<MAT> W_buffer(2*(this->k-1)); //stores all W's from all nodes, similar to cell array
+        arma::field<MAT> H_buffer(2*(this->k-1)); //stores all H's from all nodes, similar to cell array
+        VEC split_subset;
+        VEC max_val;
+        arma::uvec cluster_subset;
+
+        //NOTE: C++ indexing start at 0, be careful transforming from matlab!!! Might have ERRORS!!!
+        // k-1 is the number of splits for reaching k leaf nodes. Use a for loop around the number of splits to run Hier-R2
+        for (int i=0; i<this->k-1; i++){ //from the first (i=0) split to the k-1 split (Note, C++ indexing start at 0)
+            timings(i) = clock() - t0; //keep track of wall time per iteration in seconds
+
+            //if this is the first split from node 0, initiate
+            if (i==0){
+                split_node = 0;// currently at node 0
+                new_node_1 = 0; //splitted into node 1 and 2 (but indexing start at 0, so minus 1)
+                new_node_2 = 1;
+                min_priority = 1e308;
+                for (int temp=0; temp<this->A.n_cols; temp++) {
+                    split_subset(temp) = temp;
+                }
+            }
+            //else, initiate
+            else{
+                leaves = arma::find(is_leaf==1); //find current all leaf nodes
+                temp_priority = priorities(leaves); //store all current leaf nodes priorities
+                min_priority = min(temp_priority(temp_priority > 0)); //store the min priority among current leaf nodes
+                max_priority = max(temp_priority); //split the node with the largest "score" next
+                split_node = index_max(temp_priority); //index of the node with the largest "score"
+                if (max_priority <0){
+                    cout<<"Cannot generate all leaf clusters."<<endl;
+                    break;
+                }
+                //start with the current leaf node that has the highest "score"
+                split_node = leaves (split_node);
+                is_leaf(split_node) = 0; //we are now splitting this node, so it will no longer be a leaf node
+                W = W_buffer(split_node);
+                H = H_buffer(split_node);
+                split_subset = clusters(split_node);
+                new_node_1 = result_used; //c++ indexing start at 0, so minus 1 from matlab version
+                new_node_2 = result_used+1;
+                tree(0, split_node) = new_node_1;
+                tree(1, split_node) = new_node_2;
+            }
+            result_used = result_used + 2;
+            max_val = max(H); //max_val is a row vector that contains the max value of each column of H
+            cluster_subset = index_max(H);
+            //based on max_val, split the columns of data matrix into two clusters (based on the greater value in H)
+            arma::uvec temp_subset_1 = arma::find(cluster_subset == 0);
+            arma::uvec temp_subset_2 = arma::find(cluster_subset == 1);
+            clusters(new_node_1) = split_subset(temp_subset_1); //cluster 1
+            clusters(new_node_2) = split_subset(temp_subset_2); //cluster 2
+            Ws.col(new_node_1) = W.col(0); //save the W matrix from the decomp of cluster 1 (first column)
+            Ws.col(new_node_2) = W.col(1); // W matrix second column of cluster 2
+            splits(i) = split_node; //record which node is being split
+            is_leaf(new_node_1) = 1; //record if this is a permenant leaf node
+            is_leaf(new_node_2) = 1;
+
+            VEC subset = clusters(new_node_1);
+            //[subset, W_buffer_one, H_buffer_one, priority_one] = trial_split(trial_allowance, unbalanced, min_priority, X, subset, W(:, 1), params);
+            clusters(new_node_1) = subset;
+            //W_buffer(new_node_1) = W_buffer_one;
+            //H_buffer(new_node_1) = H_buffer_one;
+            //priorities(new_node_1) = priority_one;
+
+            subset = clusters(new_node_2);
+            //[subset, W_buffer_one, H_buffer_one, priority_one] = trial_split(trial_allowance, unbalanced, min_priority, X, subset, W(:, 2), params);
+            //clusters(new_node_2) = subset;
+            //W_buffer(new_node_2) = W_buffer_one;
+            //H_buffer(new_node_2) = H_buffer_one;
+            //priorities(new_node_2)) = priority_one;
+        }
+
+        timings = timings / CLOCKS_PER_SEC;
+
     }
 
     ~R2NMF() {
