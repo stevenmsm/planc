@@ -153,6 +153,9 @@ class R2NMF: public NMF<T> {
                 H.col(i) = H.col(i) * norm2_temp(i);
             }
         }
+
+        this->H=H;
+        this->W=W;
     }
 
   public:
@@ -224,13 +227,18 @@ class R2NMF: public NMF<T> {
         int new_node_2;
         double min_priority; //store minimum priority among current leaf nodes
         double max_priority; //max priority among current leaf nodes
-        arma::uvec leaves; // store the indices of all current leaf nodes
-        arma::rowvec temp_priority; // store the priorities (from the priorities array) of current leaf nodes
+        arma::umat leaves; // store the indices of all current leaf nodes
+        arma::vec temp_priority; // store the priorities (from the priorities array) of current leaf nodes
         arma::field<MAT> W_buffer(2*(this->k-1)); //stores all W's from all nodes, similar to cell array
         arma::field<MAT> H_buffer(2*(this->k-1)); //stores all H's from all nodes, similar to cell array
-        VEC split_subset;
-        VEC max_val;
-        arma::uvec cluster_subset;
+        VEC split_subset(this->A.n_cols);
+        arma::colvec max_val; //max_val is a row vector that contains the max value of each column of H
+        arma::ucolvec cluster_subset; //cluster_subset is a row vector that contains the index of max value of each column of H
+
+        //initiate more variables
+        int trial_allowance=3; //default trial_allowance
+        double unbalanced=0.1; //default unbalanced
+
 
         //NOTE: C++ indexing start at 0, be careful transforming from matlab!!! Might have ERRORS!!!
         // k-1 is the number of splits for reaching k leaf nodes. Use a for loop around the number of splits to run Hier-R2
@@ -246,12 +254,15 @@ class R2NMF: public NMF<T> {
                 for (int temp=0; temp<this->A.n_cols; temp++) {
                     split_subset(temp) = temp;
                 }
+                //split_subset.print();
             }
             //else, initiate
             else{
                 leaves = arma::find(is_leaf==1); //find current all leaf nodes
-                temp_priority = priorities(leaves); //store all current leaf nodes priorities
-                min_priority = min(temp_priority(temp_priority > 0)); //store the min priority among current leaf nodes
+                temp_priority = priorities(leaves); //store all current leaf nodes priorities. NOTE: temp_priority IS A COLVECTOR
+                arma::umat temp_priority_G0 = arma::find(temp_priority>0);
+                arma::vec temp_priority_temp = temp_priority(temp_priority_G0);
+                min_priority = arma::min(temp_priority_temp); //store the min priority among current leaf nodes
                 max_priority = max(temp_priority); //split the node with the largest "score" next
                 split_node = index_max(temp_priority); //index of the node with the largest "score"
                 if (max_priority <0){
@@ -262,7 +273,7 @@ class R2NMF: public NMF<T> {
                 split_node = leaves (split_node);
                 is_leaf(split_node) = 0; //we are now splitting this node, so it will no longer be a leaf node
                 W = W_buffer(split_node);
-                H = H_buffer(split_node);
+                H = H_buffer(split_node); //NOTE: H IS (xxx) BY 2 IN THE CODE!!
                 split_subset = clusters(split_node);
                 new_node_1 = result_used; //c++ indexing start at 0, so minus 1 from matlab version
                 new_node_2 = result_used+1;
@@ -270,8 +281,8 @@ class R2NMF: public NMF<T> {
                 tree(1, split_node) = new_node_2;
             }
             result_used = result_used + 2;
-            max_val = max(H); //max_val is a row vector that contains the max value of each column of H
-            cluster_subset = index_max(H);
+            max_val = arma::max(H,1); //max_val is a row vector that contains the max value of each column of H
+            cluster_subset = index_max(H,1); //NOTE: H IS (xxx) BY 2 IN THE CODE!!!
             //based on max_val, split the columns of data matrix into two clusters (based on the greater value in H)
             arma::uvec temp_subset_1 = arma::find(cluster_subset == 0);
             arma::uvec temp_subset_2 = arma::find(cluster_subset == 1);
@@ -282,6 +293,7 @@ class R2NMF: public NMF<T> {
             splits(i) = split_node; //record which node is being split
             is_leaf(new_node_1) = 1; //record if this is a permenant leaf node
             is_leaf(new_node_2) = 1;
+
 
             VEC subset = clusters(new_node_1);
             //[subset, W_buffer_one, H_buffer_one, priority_one] = trial_split(trial_allowance, unbalanced, min_priority, X, subset, W(:, 1), params);
@@ -297,9 +309,8 @@ class R2NMF: public NMF<T> {
             //H_buffer(new_node_2) = H_buffer_one;
             //priorities(new_node_2)) = priority_one;
         }
-
+        //change timings from clicks to seconds
         timings = timings / CLOCKS_PER_SEC;
-
     }
 
     ~R2NMF() {
